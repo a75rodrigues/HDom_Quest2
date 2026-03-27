@@ -1,5 +1,7 @@
 import io
+import os
 import json
+import zipfile
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -8,6 +10,7 @@ import numpy as np
 import pandas as pd
 import pypdfium2 as pdfium
 
+
 OPTION_LABELS = {
     1: "Não se aplica",
     2: "Nunca",
@@ -15,6 +18,7 @@ OPTION_LABELS = {
     4: "Com frequência",
     5: "Sempre",
 }
+
 
 @dataclass
 class CellDecision:
@@ -26,34 +30,47 @@ class CellDecision:
     confidence: float
     scores: List[float]
 
+
 def load_config(path: str):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
 
 def render_pdf_to_images(pdf_bytes: bytes, dpi: int):
     pdf = pdfium.PdfDocument(pdf_bytes)
     scale = dpi / 72.0
     pages = []
+
     for i in range(len(pdf)):
         page = pdf[i]
         bitmap = page.render(scale=scale)
         pil = bitmap.to_pil()
         arr = cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
         pages.append(arr)
+
     return pages
+
 
 def preprocess_for_alignment(img_bgr):
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (3, 3), 0)
     return gray
 
+
 def preprocess_binary(img_bgr):
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (3, 3), 0)
+
     bw = cv2.adaptiveThreshold(
-        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 11
+        gray,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV,
+        31,
+        11
     )
     return bw
+
 
 def align_to_model(image_bgr, model_bgr):
     img1 = preprocess_for_alignment(image_bgr)
@@ -68,6 +85,7 @@ def align_to_model(image_bgr, model_bgr):
 
     matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
     matches = matcher.match(des1, des2)
+
     if len(matches) < 20:
         return image_bgr.copy()
 
@@ -83,6 +101,7 @@ def align_to_model(image_bgr, model_bgr):
     aligned = cv2.warpPerspective(image_bgr, H, (w, h), borderValue=(255, 255, 255))
     return aligned
 
+
 def get_answer_zone(page_img, zone_cfg):
     h, w = page_img.shape[:2]
     x = int(zone_cfg["x"] * w)
@@ -90,6 +109,7 @@ def get_answer_zone(page_img, zone_cfg):
     ww = int(zone_cfg["w"] * w)
     hh = int(zone_cfg["h"] * h)
     return x, y, ww, hh
+
 
 def compute_cell_boxes(zone_rect, cfg):
     x, y, w, h = zone_rect
@@ -110,26 +130,38 @@ def compute_cell_boxes(zone_rect, cfg):
     inner_h = yi2 - yi1
 
     cell_boxes = []
+
     for r in range(rows):
         row_boxes = []
+
         cy1 = yi1 + int(r * inner_h / rows)
         cy2 = yi1 + int((r + 1) * inner_h / rows)
+
         for c in range(cols):
             cx1 = xi1 + int(c * inner_w / cols)
             cx2 = xi1 + int((c + 1) * inner_w / cols)
+
             pad_x = int((cx2 - cx1) * cfg["cell_padding_x"])
             pad_y = int((cy2 - cy1) * cfg["cell_padding_y"])
+
             row_boxes.append((cx1 + pad_x, cy1 + pad_y, cx2 - pad_x, cy2 - pad_y))
+
         cell_boxes.append(row_boxes)
+
     return cell_boxes
+
 
 def score_cell(aligned_bw, model_bw, box):
     x1, y1, x2, y2 = box
+
     cell = aligned_bw[y1:y2, x1:x2]
     model_cell = model_bw[y1:y2, x1:x2]
+
     added = cv2.bitwise_and(cell, cv2.bitwise_not(model_cell))
     score = float(np.count_nonzero(added)) / float(added.size if added.size else 1)
+
     return score
+
 
 def decide_row(scores, cfg):
     best_idx = int(np.argmax(scores))
@@ -152,10 +184,32 @@ def decide_row(scores, cfg):
 
     return best_idx + 1, "OK", min(1.0, best)
 
+
+def save_debug_image(aligned_bgr, zone_rect, cell_boxes, name, page_idx):
+    debug_folder = "/tmp/questionario_debug"
+    os.makedirs(debug_folder, exist_ok=True)
+
+    debug_img = aligned_bgr.copy()
+
+    zx, zy, zw, zh = zone_rect
+    cv2.rectangle(debug_img, (zx, zy), (zx + zw, zy + zh), (255, 0, 0), 2)
+
+    for row in cell_boxes:
+        for box in row:
+            x1, y1, x2, y2 = box
+            cv2.rectangle(debug_img, (x1, y1), (x2, y2), (0, 255, 0), 1)
+
+    debug_name = f"{name.replace('.pdf', '')}_p{page_idx + 1}.png"
+    cv2.imwrite(os.path.join(debug_folder, debug_name), debug_img)
+
+
 def process_one_pdf(name, pdf_bytes, model_pages, cfg, debug=False):
     pages = render_pdf_to_images(pdf_bytes, cfg["dpi"])
+
     if len(pages) != cfg["pages_per_pdf"]:
-        raise ValueError(f"{name}: esperado {cfg['pages_per_pdf']} páginas, recebido {len(pages)}.")
+        raise ValueError(
+            f"{name}: esperado {cfg['pages_per_pdf']} páginas, recebido {len(pages)}."
+        )
 
     decisions_all = []
 
@@ -170,27 +224,12 @@ def process_one_pdf(name, pdf_bytes, model_pages, cfg, debug=False):
         zone_rect = get_answer_zone(aligned_bgr, cfg["page_zones"][page_idx])
         cell_boxes = compute_cell_boxes(zone_rect, cfg)
 
-                if debug:
-            import os
-            os.makedirs("/tmp/questionario_debug", exist_ok=True)
-
-            debug_img = aligned_bgr.copy()
-
-            # desenhar retângulo azul da zona total de respostas
-            zx, zy, zw, zh = zone_rect
-            cv2.rectangle(debug_img, (zx, zy), (zx + zw, zy + zh), (255, 0, 0), 2)
-
-            # desenhar cada célula em verde
-            for row in cell_boxes:
-                for box in row:
-                    x1, y1, x2, y2 = box
-                    cv2.rectangle(debug_img, (x1, y1), (x2, y2), (0, 255, 0), 1)
-
-            debug_name = f"{name.replace('.pdf', '')}_p{page_idx+1}.png"
-            cv2.imwrite(f"/tmp/questionario_debug/{debug_name}", debug_img)
+        if debug:
+            save_debug_image(aligned_bgr, zone_rect, cell_boxes, name, page_idx)
 
         for q in range(cfg["questions_per_page"]):
             scores = []
+
             for opt in range(cfg["options_per_question"]):
                 score = score_cell(aligned_bw, model_bw, cell_boxes[q][opt])
                 scores.append(score)
@@ -211,6 +250,7 @@ def process_one_pdf(name, pdf_bytes, model_pages, cfg, debug=False):
 
     return decisions_all
 
+
 def build_excel(results):
     output = io.BytesIO()
     rows_wide = []
@@ -218,9 +258,11 @@ def build_excel(results):
 
     for filename, decisions in results.items():
         row = {"Ficheiro": filename}
+
         for d in decisions:
             key = f"P{d.page}_Q{d.question}"
             row[key] = d.option_label if d.option_label else d.state
+
             rows_audit.append({
                 "Ficheiro": filename,
                 "Página": d.page,
@@ -230,6 +272,7 @@ def build_excel(results):
                 "Confiança": round(d.confidence, 4),
                 "Scores": ", ".join(f"{s:.4f}" for s in d.scores),
             })
+
         rows_wide.append(row)
 
     df_wide = pd.DataFrame(rows_wide)
@@ -242,30 +285,51 @@ def build_excel(results):
     output.seek(0)
     return output.getvalue()
 
-    def process_uploaded_files(model_file, pdf_files, config_path: str, debug=False):
+
+def zip_debug_folder():
+    debug_folder = "/tmp/questionario_debug"
+
+    if not os.path.exists(debug_folder):
+        return None
+
+    zip_buffer = io.BytesIO()
+
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for fname in os.listdir(debug_folder):
+            full_path = os.path.join(debug_folder, fname)
+            if os.path.isfile(full_path):
+                zf.write(full_path, arcname=fname)
+
+    zip_buffer.seek(0)
+    return zip_buffer.getvalue()
+
+
+def process_uploaded_files(model_file, pdf_files, config_path: str, debug=False):
     cfg = load_config(config_path)
     model_pages = render_pdf_to_images(model_file.read(), cfg["dpi"])
 
-    results = {}
-    for f in pdf_files:
-             results[f.filename] = process_one_pdf(f.filename, f.read(), model_pages, cfg, debug=debug)
+    if debug:
+        os.makedirs("/tmp/questionario_debug", exist_ok=True)
+        for fname in os.listdir("/tmp/questionario_debug"):
+            fpath = os.path.join("/tmp/questionario_debug", fname)
+            if os.path.isfile(fpath):
+                os.remove(fpath)
 
-        excel_bytes = build_excel(results)
+    results = {}
+
+    for f in pdf_files:
+        results[f.filename] = process_one_pdf(
+            f.filename,
+            f.read(),
+            model_pages,
+            cfg,
+            debug=debug
+        )
+
+    excel_bytes = build_excel(results)
 
     if debug:
-        import os
-        import zipfile
-
-        zip_buffer = io.BytesIO()
-        debug_folder = "/tmp/questionario_debug"
-
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            if os.path.exists(debug_folder):
-                for fname in os.listdir(debug_folder):
-                    full_path = os.path.join(debug_folder, fname)
-                    zf.write(full_path, arcname=fname)
-
-        zip_buffer.seek(0)
-        return excel_bytes, zip_buffer.getvalue()
+        debug_zip = zip_debug_folder()
+        return excel_bytes, debug_zip
 
     return excel_bytes
