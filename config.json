@@ -3,9 +3,9 @@
   "pages_per_pdf": 2,
   "questions_per_page": 14,
   "options_per_question": 5,
-  "mark_threshold": 0.055,
-  "uncertain_threshold": 0.02,
-  "margin_threshold": 0.01,
+  "mark_threshold": 0.040,
+  "uncertain_threshold": 0.012,
+  "margin_threshold": 0.006,
   "cell_padding_x": 0.22,
   "cell_padding_y": 0.18,
   "inner_margins": {
