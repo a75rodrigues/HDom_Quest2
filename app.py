@@ -5,9 +5,11 @@ from processor import process_uploaded_files
 app = Flask(__name__)
 app.secret_key = "questionario-secret-key"
 
+
 @app.route("/", methods=["GET"])
 def index():
     return render_template("index.html")
+
 
 @app.route("/process", methods=["POST"])
 def process():
@@ -24,12 +26,19 @@ def process():
         return redirect(url_for("index"))
 
     try:
-result_bytes, debug_zip = process_uploaded_files(
-    model_file=model_file,
-    pdf_files=pdf_files,
-    config_path="config.json",
-    debug=True
-)
+        output = process_uploaded_files(
+            model_file=model_file,
+            pdf_files=pdf_files,
+            config_path="config.json",
+            debug=True
+        )
+
+        if isinstance(output, tuple):
+            result_bytes, debug_zip = output
+        else:
+            result_bytes = output
+            debug_zip = None
+
     except Exception as e:
         flash(f"Erro no processamento: {e}")
         return redirect(url_for("index"))
@@ -39,16 +48,8 @@ result_bytes, debug_zip = process_uploaded_files(
         as_attachment=True,
         download_name="resultado.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    response = send_file(
-        io.BytesIO(result_bytes),
-        as_attachment=True,
-        download_name="resultado.xlsx",
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
-
-return response
-        
     )
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
