@@ -1,0 +1,31 @@
+{
+  "dpi": 200,
+  "pages_per_pdf": 2,
+  "questions_per_page": 14,
+  "options_per_question": 5,
+  "mark_threshold": 0.055,
+  "uncertain_threshold": 0.02,
+  "margin_threshold": 0.01,
+  "cell_padding_x": 0.22,
+  "cell_padding_y": 0.18,
+  "inner_margins": {
+    "top": 0.02,
+    "bottom": 0.02,
+    "left": 0.0,
+    "right": 0.0
+  },
+  "page_zones": [
+    {
+      "x": 0.53,
+      "y": 0.21,
+      "w": 0.39,
+      "h": 0.55
+    },
+    {
+      "x": 0.53,
+      "y": 0.21,
+      "w": 0.39,
+      "h": 0.55
+    }
+  ]
+}

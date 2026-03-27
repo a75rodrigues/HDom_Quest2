@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <title>Leitor de Questionários PDF</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 900px; margin: 30px auto; padding: 0 16px; }
+    h1 { margin-bottom: 6px; }
+    .card { border: 1px solid #ddd; border-radius: 14px; padding: 18px; margin-top: 16px; }
+    .muted { color: #555; }
+    label { display:block; margin-top: 14px; font-weight: bold; }
+    input[type=file] { margin-top: 6px; }
+    button { margin-top: 18px; padding: 10px 16px; border: 0; border-radius: 10px; cursor: pointer; }
+    .flash { background: #fff3cd; border: 1px solid #ffec99; padding: 10px 12px; border-radius: 10px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+  <h1>Leitor de Questionários PDF</h1>
+  <p class="muted">Carrega o modelo em branco e os PDFs preenchidos. O sistema devolve um Excel com as respostas.</p>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      {% for message in messages %}
+        <div class="flash">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="card">
+    <form action="/process" method="post" enctype="multipart/form-data">
+      <label>Modelo em branco (PDF com 2 páginas)</label>
+      <input type="file" name="modelo" accept=".pdf" required>
+
+      <label>Questionários preenchidos (um ou vários PDFs)</label>
+      <input type="file" name="pdfs" accept=".pdf" multiple required>
+
+      <br>
+      <button type="submit">Processar e descarregar Excel</button>
+    </form>
+  </div>
+</body>
+</html>
