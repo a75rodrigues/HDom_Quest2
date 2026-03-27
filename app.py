@@ -24,11 +24,12 @@ def process():
         return redirect(url_for("index"))
 
     try:
-        result_bytes = process_uploaded_files(
-            model_file=model_file,
-            pdf_files=pdf_files,
-            config_path="config.json"
-        )
+result_bytes, debug_zip = process_uploaded_files(
+    model_file=model_file,
+    pdf_files=pdf_files,
+    config_path="config.json",
+    debug=True
+)
     except Exception as e:
         flash(f"Erro no processamento: {e}")
         return redirect(url_for("index"))
@@ -38,6 +39,15 @@ def process():
         as_attachment=True,
         download_name="resultado.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    response = send_file(
+        io.BytesIO(result_bytes),
+        as_attachment=True,
+        download_name="resultado.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+
+return response
+        
     )
 
 if __name__ == "__main__":
